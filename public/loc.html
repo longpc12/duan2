@@ -1,0 +1,339 @@
+<!doctype html>
+<html lang="vi">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Lọc ACC (SKIN / BAN / SDT / CMND) + SS/SSS/Anime</title>
+  <style>
+    :root {
+      --gap: 12px;
+      --pad: 12px;
+      --radius: 10px;
+    }
+
+    body {
+      font-family: system-ui, Arial, sans-serif;
+      margin: 0;
+      background: #0b1220;
+      color: #e6e9ef;
+    }
+
+    .wrap {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 20px;
+    }
+
+    h1 {
+      font-size: 20px;
+      margin: 0 0 10px;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr 320px;
+      gap: var(--gap);
+    }
+
+    textarea {
+      width: 100%;
+      min-height: 360px;
+      resize: vertical;
+      padding: var(--pad);
+      border-radius: var(--radius);
+      border: 1px solid #24304a;
+      background: #0f182b;
+      color: #e6e9ef;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+    }
+
+    .panel {
+      border: 1px solid #24304a;
+      background: #101a2f;
+      border-radius: var(--radius);
+      padding: var(--pad);
+    }
+
+    fieldset {
+      border: 1px solid #24304a;
+      border-radius: 8px;
+      padding: 10px;
+      margin: 0 0 10px;
+    }
+
+    legend {
+      padding: 0 6px;
+      color: #bfc7d4;
+    }
+
+    label {
+      display: block;
+      margin: 6px 0;
+    }
+
+    .row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    select,
+    button {
+      padding: 10px 12px;
+      border-radius: 8px;
+      border: 1px solid #24304a;
+      background: #18243f;
+      color: #e6e9ef;
+      cursor: pointer;
+    }
+
+    button:hover {
+      background: #1d2b4a;
+    }
+
+    .toolbar {
+      display: flex;
+      gap: 8px;
+      margin: 10px 0;
+      flex-wrap: wrap;
+    }
+
+    .status {
+      font-size: 12px;
+      color: #98a2b3;
+      margin-left: auto;
+    }
+
+    .outwrap {
+      margin-top: 12px;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="wrap">
+    <h1>Lọc ACC theo tiêu chí</h1>
+    <div class="grid">
+      <div>
+        <label for="input">Dán dữ liệu (mỗi ACC 1 dòng):</label>
+        <textarea id="input" placeholder="Dán dữ liệu tại đây..."></textarea>
+
+        <div class="toolbar">
+          <button id="btnFilter">Lọc</button>
+          <button id="btnCopy">Copy kết quả</button>
+          <button id="btnClear">Xoá</button>
+          <span class="status" id="status">Ready</span>
+        </div>
+
+        <div class="outwrap">
+          <label for="output">Kết quả:</label>
+          <textarea id="output"
+            placeholder="username|password|SKIN : ... | SS:X [tên…] | SSS:Y [tên…] | Anime:Z [tên…] | BAN : ... | EMAIL : ... | SDT : ..."></textarea>
+        </div>
+      </div>
+
+      <div class="panel">
+        <fieldset>
+          <legend>Filter SKIN</legend>
+          <label><input type="radio" name="skin" value="any" checked> Bất kỳ</label>
+          <label><input type="radio" name="skin" value="50"> ≥ 50</label>
+          <label><input type="radio" name="skin" value="100"> ≥ 100</label>
+          <label><input type="radio" name="skin" value="200"> ≥ 200</label>
+        </fieldset>
+
+        <fieldset>
+          <legend>BAN</legend>
+          <label>Trạng thái:
+            <select id="ban">
+              <option value="any">Any</option>
+              <option value="YES">YES</option>
+              <option value="NO">NO</option>
+            </select>
+          </label>
+        </fieldset>
+
+        <fieldset>
+          <legend>SDT</legend>
+          <label>Trạng thái:
+            <select id="sdt">
+              <option value="any">Any</option>
+              <option value="YES">YES</option>
+              <option value="NO">NO</option>
+            </select>
+          </label>
+        </fieldset>
+
+        <fieldset>
+          <legend>CMND</legend>
+          <label>Trạng thái:
+            <select id="cmnd">
+              <option value="any">Any</option>
+              <option value="YES">YES</option>
+              <option value="NO">NO</option>
+            </select>
+          </label>
+        </fieldset>
+
+        <fieldset>
+          <legend>Điều kiện thêm</legend>
+          <label><input type="checkbox" id="needSS"> Có ≥1 SS</label>
+          <label><input type="checkbox" id="needSSS"> Có ≥1 SSS</label>
+        </fieldset>
+
+        <fieldset>
+          <legend>Tuỳ chọn</legend>
+          <label><input type="checkbox" id="dedup" checked> Bỏ trùng</label>
+          <label><input type="checkbox" id="stripHtml" checked> Loại thẻ HTML trong TÊN/NAME</label>
+        </fieldset>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    (function () {
+      const $ = s => document.querySelector(s);
+      const elInput = $("#input"), elOutput = $("#output"), elStatus = $("#status");
+      const elBan = $("#ban"), elSdt = $("#sdt"), elCmnd = $("#cmnd");
+      const elNeedSS = $("#needSS"), elNeedSSS = $("#needSSS");
+
+      function getSkinThreshold() {
+        const v = document.querySelector('input[name="skin"]:checked').value;
+        return v === "any" ? null : parseInt(v, 10);
+      }
+      function stripHTML(s) { const d = document.createElement("div"); d.innerHTML = s; return d.textContent || ""; }
+      function normYesNo(s) { if (!s) return ""; s = s.replace(/\s+/g, "").toUpperCase(); return (s === "YES" || s === "NO") ? s : s; }
+      function firstInt(s, f = 0) { const m = String(s).match(/-?\d+/); return m ? parseInt(m[0], 10) : f; }
+
+      // Trích số và danh sách tên trong ngoặc vuông, ví dụ: "5 [A, B, C]" -> {count:5, names:"A, B, C"}
+      function parseCountAndNames(val, noneLabel) {
+        let count = firstInt(val, 0);
+        let names = "";
+        const m = String(val).match(/\[(.*)\]/);
+        if (m) {
+          names = m[1].trim();
+          if (!names) names = noneLabel;
+        } else {
+          // nếu không có ngoặc vuông, dùng mặc định
+          names = noneLabel;
+        }
+        return { count, names };
+      }
+
+      // Hỗ trợ key tiếng Việt & tiếng Anh cũ
+      function parseLine(line) {
+        const parts = line.split("|").map(x => x.trim()).filter(Boolean);
+        if (parts.length < 2) return null;
+
+        const obj = { username: parts[0], password: parts[1] };
+
+        for (let i = 2; i < parts.length; i++) {
+          const m = parts[i].match(/^([^:]+)\s*:\s*(.*)$/);
+          if (!m) continue;
+
+          const keyRaw = (m[1] || "").trim();
+          const keyUp = keyRaw.toUpperCase();
+          const keyNoSpace = keyUp.replace(/\s+/g, "");
+          let val = (m[2] || "").trim();
+          if ($("#stripHtml").checked) val = stripHTML(val);
+
+          if (keyUp === "SKIN") {
+            obj.SKIN = firstInt(val, null);
+
+          } else if (keyUp === "BAN" || keyUp === "TÀI KHOẢN ĐÃ BAN CHƯA") {
+            obj.BAN = normYesNo(val);
+
+          } else if (keyUp === "EMAIL") {
+            obj.EMAIL = normYesNo(val);
+
+          } else if (keyNoSpace === "SDT") {
+            obj.SDT = normYesNo(val);
+
+          } else if (keyUp === "CMND") {
+            obj.CMND = normYesNo(val);
+
+          } else if (keyUp === "SS" || keyUp === "SKIN SS") {
+            const r = parseCountAndNames(val, "NO SS");
+            obj.SS = r.count;
+            obj.SS_NAMES = r.names;
+
+          } else if (keyUp === "SSS" || keyUp === "SKIN SSS") {
+            const r = parseCountAndNames(val, "NO SSS");
+            obj.SSS = r.count;
+            obj.SSS_NAMES = r.names;
+
+          } else if (keyUp === "ANIME" || keyUp === "SKIN ANIME") {
+            const r = parseCountAndNames(val, "NO ANIME");
+            obj.ANIME = r.count;
+            obj.ANIME_NAMES = r.names;
+
+          } else if (keyUp === "TÊN" || keyUp === "NAME") {
+            obj.NAME = val;
+
+          } else if (keyUp === "SỐ TƯỚNG" || keyUp === "SỐTƯỚNG" || keyUp === "HERO") {
+            obj.HERO = firstInt(val, 0);
+
+          } else {
+            obj[keyUp] = val;
+          }
+        }
+
+        // Giá trị mặc định
+        if (typeof obj.SS !== "number") obj.SS = 0;
+        if (typeof obj.SS_NAMES !== "string") obj.SS_NAMES = "NO SS";
+        if (typeof obj.SSS !== "number") obj.SSS = 0;
+        if (typeof obj.SSS_NAMES !== "string") obj.SSS_NAMES = "NO SSS";
+        if (typeof obj.ANIME !== "number") obj.ANIME = 0;
+        if (typeof obj.ANIME_NAMES !== "string") obj.ANIME_NAMES = "NO ANIME";
+
+        return obj;
+      }
+
+      function passFilters(acc) {
+        const skinThres = getSkinThreshold();
+        if (skinThres !== null && (!acc.SKIN || acc.SKIN < skinThres)) return false;
+
+        if (elBan.value !== "any" && acc.BAN !== elBan.value) return false;
+        if (elSdt.value !== "any" && acc.SDT !== elSdt.value) return false;
+        if (elCmnd.value !== "any" && acc.CMND !== elCmnd.value) return false;
+
+        if (elNeedSS.checked && acc.SS <= 0) return false;
+        if (elNeedSSS.checked && acc.SSS <= 0) return false;
+
+        return true;
+      }
+
+      function formatOutput(acc) {
+        // username|password|SKIN : N | SS:X [names] | SSS:Y [names] | Anime:Z [names] | BAN : ... | EMAIL : ... | SDT : ...
+        return `${acc.username}|${acc.password}|SKIN : ${acc.SKIN || ""} | SS:${acc.SS} [${acc.SS_NAMES}] | SSS:${acc.SSS} [${acc.SSS_NAMES}] | Anime:${acc.ANIME} [${acc.ANIME_NAMES}] | BAN : ${acc.BAN || ""} | EMAIL : ${acc.EMAIL || ""} | SDT : ${acc.SDT || ""}`;
+      }
+
+      function filterNow() {
+        const raw = elInput.value.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+        let out = [], seen = new Set(), valid = 0, matched = 0, invalid = 0;
+
+        for (const line of raw) {
+          const acc = parseLine(line);
+          if (!acc) { invalid++; continue; }
+          valid++;
+          if (passFilters(acc)) {
+            const s = formatOutput(acc);
+            if ($("#dedup")?.checked) { if (seen.has(s)) continue; seen.add(s); }
+            out.push(s); matched++;
+          }
+        }
+
+        elOutput.value = out.join("\n");
+        elStatus.textContent = `Hợp lệ:${valid} | Khớp:${matched} | Lỗi:${invalid}`;
+      }
+
+      $("#btnFilter").onclick = filterNow;
+      $("#btnClear").onclick = () => { elInput.value = ""; elOutput.value = ""; elStatus.textContent = "Cleared"; };
+      $("#btnCopy").onclick = () => { if (!elOutput.value) return; navigator.clipboard.writeText(elOutput.value).then(() => elStatus.textContent = "Đã copy!"); };
+      document.addEventListener("keydown", e => { if (e.ctrlKey && e.key === "Enter") filterNow(); });
+    })();
+  </script>
+</body>
+
+</html>
