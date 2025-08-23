@@ -276,4 +276,4 @@ def api_check_batch():
 if __name__ == "__main__":
     # Chạy:  python app.py
     # Hoặc:  SERVER2_URL="https://yourserver.com/checker.php" python app.py
-    app.run(host="0.0.0.0", port=8000, debug=True)
+    app.run(debug=True)
