@@ -81,7 +81,7 @@
             color: transparent;
         }
 
-   
+
         h3 {
             margin: 10px 0 6px;
             font-size: 16px;
@@ -112,7 +112,7 @@
             border-radius: 12px;
             cursor: pointer;
             justify-self: end;
-            
+
 
         }
 
@@ -272,15 +272,52 @@
             white-space: pre-wrap;
             box-shadow: var(--shadow-1);
             font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
-            line-height: 1.55;
             overflow: auto;
             position: relative;
             overflow: auto;
-            /* hoặc scroll */
             max-height: 200px;
-            /* chiều cao giới hạn */
+            display: grid;
 
         }
+
+        .box {
+            position: relative;
+            display: flex;
+            /* quan trọng */
+            align-items: flex-start;
+            /* bám lên trên */
+        }
+
+        .box-body {
+            display: block;
+            margin: 0px;
+            white-space: pre-wrap;
+            text-align: left;
+            flex: 1;
+        }
+
+
+
+        .copy-btn {
+            position: absolute;
+            top: 4px;
+            right: 4px;
+            padding: 8px 12px;
+            background-color: #19c37d;
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            background: var(--surface);
+            color: var(--text);
+            font-weight: 700;
+            cursor: pointer;
+            box-shadow: var(--shadow-2);
+            z-index: 2;
+        }
+
+        .copy-btn:hover {
+            filter: brightness(1.05);
+        }
+
 
         /* thanh nhấn mạnh bên trái theo loại */
         #results {
@@ -464,122 +501,218 @@
 
 
             <h3>Kết quả</h3>
-            <div id="results" class="box"></div>
+            <div id="results" class="box">
+                <button class="copy-btn" data-target="resultsBody">Copy</button>
+                <pre id="resultsBody" class="box-body"></pre>
+            </div>
 
             <h3>Thất Bại</h3>
-            <div id="errors" class="box"></div>
+            <div id="errors" class="box">
+                <button class="copy-btn" data-target="errorsBody">Copy</button>
+                <pre id="errorsBody" class="box-body"></pre>
+            </div>
 
             <h3>Lỗi</h3>
-            <div id="warnings" class="box"></div>
+            <div id="warnings" class="box">
+                <button class="copy-btn" data-target="warningsBody">Copy</button>
+                <pre id="warningsBody" class="box-body"></pre>
+            </div>
 
             <h3>Thông Tin Trắng</h3>
-            <div id="ttt" class="box"></div>
+            <div id="ttt" class="box">
+                <button class="copy-btn" data-target="tttBody">Copy</button>
+                <pre id="tttBody" class="box-body"></pre>
+            </div>
+
         </div>
     </div>
 
     <script>
-        const $ = (s) => document.querySelector(s);
-        const btnPing = $("#btnPing");
-        const pingText = $("#pingText");
-        const btnCheck = $("#btnCheck");
-        const btnDownload = $("#btnDownload");
-        const tx = $("#accounts");
-        const results = $("#results");
-        const errors = $("#errors");
-        const warnings = $("#warnings");
-        const ttt = $("#ttt");
-        const okCount = $("#okCount");
-        const errCount = $("#errCount");
-        const warnCount = $("#warnCount");
-        const tttCount = $("#tttCount");
-        const boxmute = $("#boxmute");
-        const progress = $("#progress");
+        (() => {
+            // ====== Helpers ======
+            const $ = (s, p = document) => p.querySelector(s);
+            const $$ = (s, p = document) => Array.from(p.querySelectorAll(s));
 
-        btnPing.onclick = async () => {
-            pingText.textContent = "Đang ping...";
-            try {
-                const r = await fetch("/api/ping");
-                const j = await r.json();
-                if (j.ok) {
-                    pingText.textContent = `OK ~ ${j.ms}ms (HTTP ${j.http})`;
-                } else {
-                    pingText.textContent = `FAIL ~ ${j.ms}ms ${j.error ? "- " + j.error : ""}`;
-                }
-            } catch (e) {
-                pingText.textContent = "Ping lỗi: " + e.message;
-            }
-        };
+            // Elements
+            const btnPing = $("#btnPing");
+            const pingText = $("#pingText");
+            const btnCheck = $("#btnCheck");
+            const btnDownload = $("#btnDownload");
+            const tx = $("#accounts");
 
-        btnCheck.onclick = async () => {
-            const lines = tx.value.trim();
-            if (!lines) { alert("Nhập tài khoản trước đã."); return; }
+            const resultsBody = $("#resultsBody");
+            const errorsBody = $("#errorsBody");
+            const warningsBody = $("#warningsBody");
+            const tttBody = $("#tttBody");
 
-            btnCheck.disabled = true;
-            btnDownload.disabled = true;
-            results.textContent = "";
-            errors.textContent = "";
-            warnings.textContent = "";
-            ttt.textContent = "";
-            okCount.textContent = "0";
-            errCount.textContent = "0";
-            warnCount.textContent = "0";
-            tttCount.textContent = "0";
-            boxmute.style.display = "inline-flex";
-            boxmute.innerHTML = '<span class="spinner" aria-hidden="true"></span><span class="loading-dots">Đang xử lý</span>';
+            const okCount = $("#okCount");
+            const errCount = $("#errCount");
+            const warnCount = $("#warnCount");
+            const tttCount = $("#tttCount");
+            const boxmute = $("#boxmute");
+            const progress = $("#progress");
 
-            const body = {
-                lines,
-                filter_band: $("#filterBand").checked,
-                filter_ttt: $("#filterTTT").checked,
-                concurrency: $("#maxThreads").checked ? 5 : 1
+            // ====== Tiny utilities ======
+            const setText = (el, text) => { if (el) el.textContent = text; };
+            const show = (el, disp = "inline-block") => { if (el) el.style.display = disp; };
+            const hide = (el) => { if (el) el.style.display = "none"; };
+
+            const clearBodies = () => {
+                setText(resultsBody, "");
+                setText(errorsBody, "");
+                setText(warningsBody, "");
+                setText(tttBody, "");
             };
 
-            try {
-                const r = await fetch("/api/check-batch", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify(body)
-                });
-                const j = await r.json();
+            const resetCounts = () => {
+                setText(okCount, "0");
+                setText(errCount, "0");
+                setText(warnCount, "0");
+                setText(tttCount, "0");
+            };
 
-                if (j.status === "success") {
-                    (j.data.results || []).forEach(line => results.textContent += line + "\n");
-                    (j.data.errors || []).forEach(line => errors.textContent += line + "\n");
-                    (j.data.warnings || []).forEach(line => warnings.textContent += line + "\n");
-                    (j.data.ttt_list || []).forEach(line => ttt.textContent += line + "\n");
+            const appendLines = (el, lines = []) => {
+                if (!el || !lines.length) return;
+                // ghi nhanh mà không xóa nút copy
+                el.insertAdjacentText("beforeend", lines.join("\n") + (lines.length ? "\n" : ""));
+            };
 
-                    okCount.textContent = j.success;
-                    errCount.textContent = j.errors;
-                    warnCount.textContent = j.warnings;
-                    tttCount.textContent = j.ttt;
-                    boxmute.style.display = "none";
-                    progress.style.display = "inline-block"
-                    progress.textContent = `Hoàn thành! Tổng: ${j.total} | OK: ${j.success} | ERR: ${j.errors} | WARN: ${j.warnings} | TTT: ${j.ttt}`;
-                    btnDownload.disabled = (j.success === 0);
+            const setLoading = (on) => {
+                if (on) {
+                    btnCheck.disabled = true;
+                    btnDownload.disabled = true;
+                    show(boxmute, "inline-flex");
+                    boxmute.innerHTML = '<span class="spinner" aria-hidden="true"></span><span class="loading-dots">Đang xử lý</span>';
+                    hide(progress);
                 } else {
-                    boxmute.style.display = "none";
-                    progress.style.display = "inline-block";
-                    progress.textContent = "Có lỗi xảy ra.";
-                    alert(j.message || "Lỗi không xác định");
+                    btnCheck.disabled = false;
+                    hide(boxmute);
+                    show(progress);
                 }
-            } catch (e) {
-                boxmute.style.display = "none";
-                progress.style.display = "inline-block";
-                progress.textContent = "Request lỗi: " + e.message;
-            } finally {
-                btnCheck.disabled = false;
-            }
-        };
+            };
 
-        btnDownload.onclick = () => {
-            const blob = new Blob([results.textContent], { type: "text/plain" });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement("a");
-            a.href = url; a.download = "all_account_results.txt";
-            document.body.appendChild(a); a.click(); document.body.removeChild(a);
-            URL.revokeObjectURL(url);
-        };
+            const updateCounts = (j) => {
+                setText(okCount, String(j.success ?? 0));
+                setText(errCount, String(j.errors ?? 0));
+                setText(warnCount, String(j.warnings ?? 0));
+                setText(tttCount, String(j.ttt ?? 0));
+            };
+
+            // ====== Copy buttons (copy nội dung trong box-body) ======
+            const bindCopyButtons = () => {
+                $$(".copy-btn").forEach(btn => {
+                    btn.addEventListener("click", async () => {
+                        const targetId = btn.dataset.target;
+                        const bodyEl = document.getElementById(targetId);
+                        const text = (bodyEl?.innerText || "").trim();
+
+                        const old = btn.textContent;
+                        if (!text) {
+                            btn.textContent = "Trống";
+                            setTimeout(() => btn.textContent = old, 800);
+                            return;
+                        }
+                        try {
+                            await navigator.clipboard.writeText(text);
+                            btn.textContent = "Đã chép";
+                            setTimeout(() => btn.textContent = old, 900);
+                        } catch {
+                            // Fallback
+                            const ta = document.createElement("textarea");
+                            ta.value = text;
+                            document.body.appendChild(ta);
+                            ta.select();
+                            document.execCommand("copy");
+                            document.body.removeChild(ta);
+                            btn.textContent = "Đã chép";
+                            setTimeout(() => btn.textContent = old, 900);
+                        }
+                    });
+                });
+            };
+
+            // ====== Handlers ======
+            const handlePing = async () => {
+                setText(pingText, "Đang ping...");
+                try {
+                    const r = await fetch("/api/ping");
+                    const j = await r.json();
+                    if (j.ok) {
+                        setText(pingText, `OK ~ ${j.ms}ms (HTTP ${j.http})`);
+                    } else {
+                        setText(pingText, `FAIL ~ ${j.ms}ms${j.error ? " - " + j.error : ""}`);
+                    }
+                } catch (e) {
+                    setText(pingText, "Ping lỗi: " + e.message);
+                }
+            };
+
+            const handleCheck = async () => {
+                const lines = tx.value.trim();
+                if (!lines) { alert("Nhập tài khoản trước đã."); return; }
+
+                // Reset UI
+                clearBodies();
+                resetCounts();
+                setText(progress, ""); // ẩn tạm
+                setLoading(true);
+
+                const body = {
+                    lines,
+                    filter_band: $("#filterBand")?.checked ?? false,
+                    filter_ttt: $("#filterTTT")?.checked ?? false,
+                    concurrency: ($("#maxThreads")?.checked ? 5 : 1)
+                };
+
+                try {
+                    const r = await fetch("/api/check-batch", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify(body)
+                    });
+                    const j = await r.json();
+
+                    if (j.status === "success") {
+                        appendLines(resultsBody, j.data?.results || []);
+                        appendLines(errorsBody, j.data?.errors || []);
+                        appendLines(warningsBody, j.data?.warnings || []);
+                        appendLines(tttBody, j.data?.ttt_list || []);
+
+                        updateCounts(j);
+                        setText(progress, `Hoàn thành! Tổng: ${j.total} | OK: ${j.success} | ERR: ${j.errors} | WARN: ${j.warnings} | TTT: ${j.ttt}`);
+                        btnDownload.disabled = !(j.success > 0);
+                    } else {
+                        setText(progress, "Có lỗi xảy ra.");
+                        alert(j.message || "Lỗi không xác định");
+                    }
+                } catch (e) {
+                    setText(progress, "Request lỗi: " + e.message);
+                } finally {
+                    setLoading(false);
+                }
+            };
+
+            const handleDownload = () => {
+                // Tải riêng phần "Kết quả" (OK)
+                const text = resultsBody?.innerText || "";
+                const blob = new Blob([text], { type: "text/plain" });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement("a");
+                a.href = url; a.download = "all_account_results.txt";
+                document.body.appendChild(a); a.click(); document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+            };
+
+            // ====== Bind events ======
+            if (btnPing) btnPing.addEventListener("click", handlePing);
+            if (btnCheck) btnCheck.addEventListener("click", handleCheck);
+            if (btnDownload) btnDownload.addEventListener("click", handleDownload);
+            bindCopyButtons();
+        })();
+
+
     </script>
+
 </body>
 
 </html>

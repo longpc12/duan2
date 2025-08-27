@@ -190,7 +190,6 @@
       </div>
     </div>
   </div>
-
   <script>
     (function () {
       const $ = s => document.querySelector(s);
@@ -206,8 +205,124 @@
       function normYesNo(s) { if (!s) return ""; s = s.replace(/\s+/g, "").toUpperCase(); return (s === "YES" || s === "NO") ? s : s; }
       function firstInt(s, f = 0) { const m = String(s).match(/-?\d+/); return m ? parseInt(m[0], 10) : f; }
 
-      // Trích số và danh sách tên trong ngoặc vuông, ví dụ: "5 [A, B, C]" -> {count:5, names:"A, B, C"}
-      function parseCountAndNames(val, noneLabel) {
+      // --- Tách input thành từng bản ghi (block) ---
+      function splitIntoRecords(text) {
+        const lines = text.split(/\r?\n/);
+        const blocks = [];
+        let cur = [];
+        const isHeader = s => /^\s*\S+\|\S+\s*$/.test(s);
+        const isSep = s => s && s.replace(/[\s\-\u2500-\u257F]/g, "") === ""; // nhiều dấu gạch/box-drawing
+
+        for (let i = 0; i < lines.length; i++) {
+          const ln = lines[i];
+          if (!ln.trim()) { if (cur.length) { blocks.push(cur.join("\n")); cur = []; } continue; }
+          if (isSep(ln)) { if (cur.length) { blocks.push(cur.join("\n")); cur = []; } continue; }
+          if (isHeader(ln) && cur.length) { blocks.push(cur.join("\n")); cur = [ln]; }
+          else { cur.push(ln); }
+        }
+        if (cur.length) blocks.push(cur.join("\n"));
+        return blocks.length ? blocks : [];
+      }
+
+      // --- Parser kiểu "đẹp" nhiều dòng ---
+      function parseNiceBlock(txt, stripHtmlChecked = true) {
+        const acc = {};
+        const header = txt.match(/^\s*(\S+)\|(\S+)\s*$/m);
+        if (!header) return null;
+        acc.username = header[1]; acc.password = header[2];
+
+        const grab = (re, idx = 1) => { const m = txt.match(re); return m ? m[idx].trim() : ""; };
+
+        acc.NAME = grab(/•\s*Tê[nN]\s*:\s*(.+)/i);
+        const mRL = txt.match(/•\s*Rank\/Level:\s*([^\/\n]+?)\s*\/\s*(\d+)/i);
+        if (mRL) { acc.RANK = mRL[1].trim(); acc.LEVEL = parseInt(mRL[2], 10); }
+
+        const mBan = txt.match(/BAN:\s*(YES|NO)/i); if (mBan) acc.BAN = mBan[1].toUpperCase();
+        const mQH = txt.match(/QH:\s*(\d+)/i); if (mQH) acc.QH = parseInt(mQH[1], 10);
+
+        const mTS = txt.match(/•\s*Tướng\/Skin:\s*(\d+)\s*\/\s*(\d+)/i);
+        if (mTS) { acc.HERO = parseInt(mTS[1], 10); acc.SKIN = parseInt(mTS[2], 10); }
+
+        const mLinks = txt.match(/Liên kết:.*Email\s+(YES|NO).*SĐT\s+(YES|NO).*CMND\s+(YES|NO).*Authen\s+(YES|NO).*FB\s+([A-Z]+)/i);
+        if (mLinks) {
+          acc.EMAIL = mLinks[1].toUpperCase();
+          acc.SDT = mLinks[2].toUpperCase();
+          acc.CMND = mLinks[3].toUpperCase();
+          acc.AUTHEN = mLinks[4].toUpperCase();
+          acc.FB = mLinks[5].toUpperCase();
+        }
+
+        const mCountry = txt.match(/Quốc gia:\s*([A-Z]{2})/i);
+        if (mCountry) acc.COUNTRY = mCountry[1].toUpperCase();
+        const mLast = txt.match(/Đăng nhập cuối:\s*([A-Z0-9\-\s:]+)/i);
+        if (mLast) acc.LAST = mLast[1].trim();
+
+        function countAndNames(section) {
+          const reHead = new RegExp(`Skin\\s*${section}\\s*\\((\\d+)\\)\\s*:`, "i");
+          const m = txt.match(reHead);
+          let count = 0, names = `NO ${section.toUpperCase()}`;
+          if (m) {
+            count = parseInt(m[1], 10);
+            const idx = txt.search(reHead);
+            const after = txt.slice(idx).split("\n").slice(1);
+            const items = [];
+            for (const ln of after) {
+              if (/^•\s/.test(ln) || /Skin\s*(SSS?|Anime)/i.test(ln)) break;
+              const mm = ln.match(/^[\s\-–—]*[—\-]\s*(.+)\s*$/);
+              if (mm) items.push(mm[1].trim());
+            }
+            if (items.length) names = items.join(", ");
+          }
+          return { count, names };
+        }
+        const ss = countAndNames("SS");
+        const sss = countAndNames("SSS");
+        const anime = countAndNames("Anime");
+        acc.SS = ss.count; acc.SS_NAMES = ss.names;
+        acc.SSS = sss.count; acc.SSS_NAMES = sss.names;
+        acc.ANIME = anime.count; acc.ANIME_NAMES = anime.names;
+
+        if (stripHtmlChecked && acc.NAME) acc.NAME = stripHTML(acc.NAME);
+        return acc;
+      }
+
+      // --- Parser kiểu cũ 1 dòng nhiều pipe ---
+      function parseOldLine(line, stripHtmlChecked = true) {
+        const parts = line.split("|").map(x => x.trim()).filter(Boolean);
+        if (parts.length < 2) return null;
+        const obj = { username: parts[0], password: parts[1] };
+        for (let i = 2; i < parts.length; i++) {
+          const m = parts[i].match(/^([^:]+)\s*:\s*(.*)$/);
+          if (!m) continue;
+          const keyUp = (m[1] || "").trim().toUpperCase();
+          let val = (m[2] || "").trim();
+          if (stripHtmlChecked) val = stripHTML(val);
+
+          if (keyUp === "SKIN") obj.SKIN = firstInt(val, null);
+          else if (keyUp === "BAN" || keyUp === "TÀI KHOẢN ĐÃ BAN CHƯA") obj.BAN = normYesNo(val);
+          else if (keyUp === "EMAIL") obj.EMAIL = normYesNo(val);
+          else if (keyUp.replace(/\s+/g, "") === "SDT") obj.SDT = normYesNo(val);
+          else if (keyUp === "CMND") obj.CMND = normYesNo(val);
+          else if (keyUp === "SS" || keyUp === "SKIN SS") {
+            const r = parseCountAndNamesInline(val, "NO SS"); obj.SS = r.count; obj.SS_NAMES = r.names;
+          } else if (keyUp === "SSS" || keyUp === "SKIN SSS") {
+            const r = parseCountAndNamesInline(val, "NO SSS"); obj.SSS = r.count; obj.SSS_NAMES = r.names;
+          } else if (keyUp === "ANIME" || keyUp === "SKIN ANIME") {
+            const r = parseCountAndNamesInline(val, "NO ANIME"); obj.ANIME = r.count; obj.ANIME_NAMES = r.names;
+          } else if (keyUp === "TÊN" || keyUp === "NAME") obj.NAME = val;
+          else if (keyUp === "SỐ TƯỚNG" || keyUp === "SỐTƯỚNG" || keyUp === "HERO") obj.HERO = firstInt(val, 0);
+          else obj[keyUp] = val;
+        }
+        if (typeof obj.SS !== "number") obj.SS = 0;
+        if (typeof obj.SS_NAMES !== "string") obj.SS_NAMES = "NO SS";
+        if (typeof obj.SSS !== "number") obj.SSS = 0;
+        if (typeof obj.SSS_NAMES !== "string") obj.SSS_NAMES = "NO SSS";
+        if (typeof obj.ANIME !== "number") obj.ANIME = 0;
+        if (typeof obj.ANIME_NAMES !== "string") obj.ANIME_NAMES = "NO ANIME";
+        return obj;
+      }
+
+      function parseCountAndNamesInline(val, noneLabel) {
         let count = firstInt(val, 0);
         let names = "";
         const m = String(val).match(/\[(.*)\]/);
@@ -215,106 +330,50 @@
           names = m[1].trim();
           if (!names) names = noneLabel;
         } else {
-          // nếu không có ngoặc vuông, dùng mặc định
           names = noneLabel;
         }
         return { count, names };
       }
 
-      // Hỗ trợ key tiếng Việt & tiếng Anh cũ
-      function parseLine(line) {
-        const parts = line.split("|").map(x => x.trim()).filter(Boolean);
-        if (parts.length < 2) return null;
-
-        const obj = { username: parts[0], password: parts[1] };
-
-        for (let i = 2; i < parts.length; i++) {
-          const m = parts[i].match(/^([^:]+)\s*:\s*(.*)$/);
-          if (!m) continue;
-
-          const keyRaw = (m[1] || "").trim();
-          const keyUp = keyRaw.toUpperCase();
-          const keyNoSpace = keyUp.replace(/\s+/g, "");
-          let val = (m[2] || "").trim();
-          if ($("#stripHtml").checked) val = stripHTML(val);
-
-          if (keyUp === "SKIN") {
-            obj.SKIN = firstInt(val, null);
-
-          } else if (keyUp === "BAN" || keyUp === "TÀI KHOẢN ĐÃ BAN CHƯA") {
-            obj.BAN = normYesNo(val);
-
-          } else if (keyUp === "EMAIL") {
-            obj.EMAIL = normYesNo(val);
-
-          } else if (keyNoSpace === "SDT") {
-            obj.SDT = normYesNo(val);
-
-          } else if (keyUp === "CMND") {
-            obj.CMND = normYesNo(val);
-
-          } else if (keyUp === "SS" || keyUp === "SKIN SS") {
-            const r = parseCountAndNames(val, "NO SS");
-            obj.SS = r.count;
-            obj.SS_NAMES = r.names;
-
-          } else if (keyUp === "SSS" || keyUp === "SKIN SSS") {
-            const r = parseCountAndNames(val, "NO SSS");
-            obj.SSS = r.count;
-            obj.SSS_NAMES = r.names;
-
-          } else if (keyUp === "ANIME" || keyUp === "SKIN ANIME") {
-            const r = parseCountAndNames(val, "NO ANIME");
-            obj.ANIME = r.count;
-            obj.ANIME_NAMES = r.names;
-
-          } else if (keyUp === "TÊN" || keyUp === "NAME") {
-            obj.NAME = val;
-
-          } else if (keyUp === "SỐ TƯỚNG" || keyUp === "SỐTƯỚNG" || keyUp === "HERO") {
-            obj.HERO = firstInt(val, 0);
-
-          } else {
-            obj[keyUp] = val;
-          }
+      // --- Chọn parser phù hợp cho mỗi block ---
+      function parseRecord(block) {
+        const hasBullets = /•\s|Skin\s*(SSS?|Anime)\s*\(/i.test(block);
+        if (hasBullets || /^\s*\S+\|\S+\s*$/.test(block) && block.split("\n").length > 1) {
+          return parseNiceBlock(block, $("#stripHtml").checked);
         }
-
-        // Giá trị mặc định
-        if (typeof obj.SS !== "number") obj.SS = 0;
-        if (typeof obj.SS_NAMES !== "string") obj.SS_NAMES = "NO SS";
-        if (typeof obj.SSS !== "number") obj.SSS = 0;
-        if (typeof obj.SSS_NAMES !== "string") obj.SSS_NAMES = "NO SSS";
-        if (typeof obj.ANIME !== "number") obj.ANIME = 0;
-        if (typeof obj.ANIME_NAMES !== "string") obj.ANIME_NAMES = "NO ANIME";
-
-        return obj;
+        // kiểu cũ: một dòng dài
+        return parseOldLine(block, $("#stripHtml").checked);
       }
 
+      // --- Filter logic ---
       function passFilters(acc) {
         const skinThres = getSkinThreshold();
         if (skinThres !== null && (!acc.SKIN || acc.SKIN < skinThres)) return false;
 
-        if (elBan.value !== "any" && acc.BAN !== elBan.value) return false;
-        if (elSdt.value !== "any" && acc.SDT !== elSdt.value) return false;
-        if (elCmnd.value !== "any" && acc.CMND !== elCmnd.value) return false;
+        if (elBan.value !== "any" && (acc.BAN || "").toUpperCase() !== elBan.value) return false;
+        if (elSdt.value !== "any" && (acc.SDT || "").toUpperCase() !== elSdt.value) return false;
+        if (elCmnd.value !== "any" && (acc.CMND || "").toUpperCase() !== elCmnd.value) return false;
 
-        if (elNeedSS.checked && acc.SS <= 0) return false;
-        if (elNeedSSS.checked && acc.SSS <= 0) return false;
+        if (elNeedSS.checked && (acc.SS || 0) <= 0) return false;
+        if (elNeedSSS.checked && (acc.SSS || 0) <= 0) return false;
 
         return true;
       }
 
+      // Xuất 1 dòng gọn để copy/ghi file
       function formatOutput(acc) {
-        // username|password|SKIN : N | SS:X [names] | SSS:Y [names] | Anime:Z [names] | BAN : ... | EMAIL : ... | SDT : ...
-        return `${acc.username}|${acc.password}|SKIN : ${acc.SKIN || ""} | SS:${acc.SS} [${acc.SS_NAMES}] | SSS:${acc.SSS} [${acc.SSS_NAMES}] | Anime:${acc.ANIME} [${acc.ANIME_NAMES}] | BAN : ${acc.BAN || ""} | EMAIL : ${acc.EMAIL || ""} | SDT : ${acc.SDT || ""}`;
+        return `${acc.username}|${acc.password}|SKIN : ${acc.SKIN ?? ""} | SS:${acc.SS} [${acc.SS_NAMES}] | SSS:${acc.SSS} [${acc.SSS_NAMES}] | Anime:${acc.ANIME} [${acc.ANIME_NAMES}] | BAN : ${acc.BAN ?? ""} | EMAIL : ${acc.EMAIL ?? ""} | SDT : ${acc.SDT ?? ""}`;
       }
 
       function filterNow() {
-        const raw = elInput.value.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
-        let out = [], seen = new Set(), valid = 0, matched = 0, invalid = 0;
+        const rawText = elInput.value || "";
+        const blocks = splitIntoRecords(rawText).filter(b => b.trim());
+        // Nếu không tách được theo block, fallback: mỗi dòng là 1 record
+        const records = blocks.length ? blocks : rawText.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
 
-        for (const line of raw) {
-          const acc = parseLine(line);
+        let out = [], seen = new Set(), valid = 0, matched = 0, invalid = 0;
+        for (const rec of records) {
+          const acc = parseRecord(rec);
           if (!acc) { invalid++; continue; }
           valid++;
           if (passFilters(acc)) {
@@ -323,9 +382,8 @@
             out.push(s); matched++;
           }
         }
-
         elOutput.value = out.join("\n");
-        elStatus.textContent = `Hợp lệ:${valid} | Khớp:${matched} | Lỗi:${invalid}`;
+        elStatus.textContent = `Hợp lệ: ${valid} | Khớp: ${matched} | Lỗi: ${invalid}`;
       }
 
       $("#btnFilter").onclick = filterNow;
@@ -334,6 +392,7 @@
       document.addEventListener("keydown", e => { if (e.ctrlKey && e.key === "Enter") filterNow(); });
     })();
   </script>
+
 </body>
 
 </html>

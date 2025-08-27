@@ -8,6 +8,7 @@ import requests
 # ========= CẤU HÌNH =========
 # Ví dụ: https://yourserver.com/checker.php
 SERVER2_URL = os.getenv("SERVER2_URL", "https://game.vtee.store/checker.php")
+
 MAX_WORKERS = int(os.getenv("MAX_WORKERS", "10"))
 REQUEST_TIMEOUT = int(os.getenv("REQUEST_TIMEOUT", "15"))
 
@@ -147,16 +148,131 @@ def check_ttt_status(parsed: dict) -> bool:
     fb_not = (fb in ("", "NO", "DIE", "CHƯA LIÊN KẾT"))
     return sdt_not and email_not and fb_not
 
+# def format_line(parsed: dict) -> str:
+#     return (
+#         f'{parsed["username"]}|{parsed["password"]} | TÊN : {parsed["name"]} | RANK : {parsed["rank"]} '
+#         f'| LEVEL : {parsed["level"]} | SỐ TƯỚNG : {parsed["tuong"]} | SKIN : {parsed["skin"]} '
+#         f'| TÀI KHOẢN ĐÃ BAN CHƯA : {parsed["band"]} | EMAIL : {parsed["email"]} | SDT : {parsed["sdt"]} | CMND : {parsed["cmnd"]} '
+#         f'| AUTHEN : {parsed["authen"]} | FB : {parsed["fb"]} | SỐ QUÂN HUY : {parsed["qh"]} | QUỐC GIA : {parsed["acc_country"]} '
+#         f'| LOGIN LẦN CUỐI : {parsed["lsnap"]} | SKIN SS : {parsed["ss"]} [{parsed.get("listskinss","")}] '
+#         f'| SKIN SSS : {parsed["sss"]} [{parsed.get("listskinsss","")}] | SKIN ANIME : {parsed["anime"]} [{parsed.get("listskinanime","")}] '
+#         f'| TRẠNG THÁI : {parsed["tt"]}'
+#     )
+
 def format_line(parsed: dict) -> str:
-    return (
-        f'{parsed["username"]}|{parsed["password"]} | TÊN : {parsed["name"]} | RANK : {parsed["rank"]} '
-        f'| LEVEL : {parsed["level"]} | SỐ TƯỚNG : {parsed["tuong"]} | SKIN : {parsed["skin"]} '
-        f'| TÀI KHOẢN ĐÃ BAN CHƯA : {parsed["band"]} | EMAIL : {parsed["email"]} | SDT : {parsed["sdt"]} | CMND : {parsed["cmnd"]} '
-        f'| AUTHEN : {parsed["authen"]} | FB : {parsed["fb"]} | SỐ QUÂN HUY : {parsed["qh"]} | QUỐC GIA : {parsed["acc_country"]} '
-        f'| LOGIN LẦN CUỐI : {parsed["lsnap"]} | SKIN SS : {parsed["ss"]} [{parsed.get("listskinss","")}] '
-        f'| SKIN SSS : {parsed["sss"]} [{parsed.get("listskinsss","")}] | SKIN ANIME : {parsed["anime"]} [{parsed.get("listskinanime","")}] '
-        f'| TRẠNG THÁI : {parsed["tt"]}'
-    )
+    """
+    Trả về khối văn bản nhiều dòng, ví dụ:
+
+    vu13288699790|vu01689278990
+    • Tên: ⓋⒼⒶming
+    • Rank/Level: Bạc II / 25    • BAN: YES    • QH: 0
+    • Tướng/Skin: 15 / 17
+    • Liên kết: Email NO · SĐT YES · CMND YES · Authen NO · FB LIVE
+    • Quốc gia: CN   • Đăng nhập cuối: NO
+    • Skin SS (2):
+      — Laville Xạ Thần Tinh Vệ
+      — Điêu Thuyền Tiệc bãi biển
+    • Skin SSS (0): —
+    • Skin Anime (0): —
+    • Trạng thái: ACC FULL
+    ────────────────────────────────
+    """
+    # Helpers
+    def norm(s: object, dash_if_empty: bool = True) -> str:
+        v = "" if s is None else str(s).strip()
+        if not v or v.upper() in ("NULL", "NONE"):
+            return "—" if dash_if_empty else ""
+        return v
+
+    def norm0(s: object) -> str:
+        """Ưu tiên số; rỗng thì trả '0'."""
+        v = "" if s is None else str(s).strip()
+        return v if v else "0"
+
+    def to_int(s: object) -> int:
+        try:
+            return int(str(s).strip())
+        except Exception:
+            return 0
+
+    def split_items(s: object) -> list[str]:
+        """
+        Tách danh sách skin từ chuỗi (ngăn cách bằng dấu phẩy, xuống dòng, |, ;).
+        Bỏ các mục 'NO SSS/NO ANIME'...
+        """
+        if not s:
+            return []
+        txt = str(s)
+        # bỏ ngoặc vuông nếu có
+        if txt.startswith("[") and txt.endswith("]"):
+            txt = txt[1:-1]
+        import re
+        parts = re.split(r"[,\n|;]+", txt)
+        out = []
+        for p in parts:
+            t = p.strip(" -•\t")
+            if not t:
+                continue
+            if t.upper().startswith("NO "):
+                continue
+            out.append(t)
+        return out
+
+    # Lấy & chuẩn hoá field
+    user = norm(parsed.get("username"), dash_if_empty=False)
+    pw   = norm(parsed.get("password"), dash_if_empty=False)
+
+    name   = norm(parsed.get("name"))
+    rank   = norm(parsed.get("rank"))
+    level  = norm(parsed.get("level"))
+    band   = norm(parsed.get("band") or parsed.get("ban"))
+    qh     = norm0(parsed.get("qh"))
+    tuong  = norm0(parsed.get("tuong") or parsed.get("hero"))
+    skin   = norm0(parsed.get("skin"))
+    email  = norm(parsed.get("email"))
+    sdt    = norm(parsed.get("sdt"))
+    cmnd   = norm(parsed.get("cmnd"))
+    authen = norm(parsed.get("authen"))
+    fb     = norm(parsed.get("fb"))
+    country = norm(parsed.get("acc_country") or parsed.get("quocgia"))
+    last    = norm(parsed.get("lsnap") or parsed.get("lslogin"))
+
+    ss_n   = to_int(parsed.get("ss", "0"))
+    sss_n  = to_int(parsed.get("sss", "0"))
+    ani_n  = to_int(parsed.get("anime", "0"))
+
+    ss_list   = split_items(parsed.get("listskinss") or parsed.get("listss"))
+    sss_list  = split_items(parsed.get("listskinsss") or parsed.get("listsss"))
+    anime_list= split_items(parsed.get("listskinanime") or parsed.get("listanime"))
+
+    # Nếu số lượng = 0 nhưng có list thì dùng độ dài list
+    if not ss_n   and ss_list:   ss_n   = len(ss_list)
+    if not sss_n  and sss_list:  sss_n  = len(sss_list)
+    if not ani_n  and anime_list:ani_n  = len(anime_list)
+
+    def list_block(label: str, count: int, items: list[str]) -> str:
+        if items:
+            lines = [f"• {label} ({count}):"] + [f"  — {it}" for it in items]
+        else:
+            lines = [f"• {label} ({count}): —"]
+        return "\n".join(lines)
+
+    # Build các dòng
+    lines = [
+        f"{user}|{pw}",
+        f"• Tên: {name}",
+        f"• Rank/Level: {rank} / {level}    • BAN: {band}    • QH: {qh}",
+        f"• Tướng/Skin: {tuong} / {skin}",
+        f"• Liên kết: Email {email} · SĐT {sdt} · CMND {cmnd} · Authen {authen} · FB {fb}",
+        f"• Quốc gia: {country}   • Đăng nhập cuối: {last}",
+        list_block("Skin SS", ss_n, ss_list),
+        list_block("Skin SSS", sss_n, sss_list),
+        list_block("Skin Anime", ani_n, anime_list),
+        f"• Trạng thái: {norm(parsed.get('tt'))}",
+        "────────────────────────────────",
+    ]
+
+    return "\n".join(lines)
 
 # ========= API =========
 @app.route("/")
@@ -276,4 +392,4 @@ def api_check_batch():
 if __name__ == "__main__":
     # Chạy:  python app.py
     # Hoặc:  SERVER2_URL="https://yourserver.com/checker.php" python app.py
-    app.run(debug=True)
+    app.run(host="0.0.0.0", port=8000, debug=True)
